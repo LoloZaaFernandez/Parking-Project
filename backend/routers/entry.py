@@ -8,35 +8,67 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
 from lpr.camera import camera_manager
-from models import Ticket
+from models import Abonado, Ticket
 from ws_manager import manager
 
 router = APIRouter(prefix="/entry", tags=["entry"])
 
 
+def _is_active_abonado(plate: str, db: Session) -> tuple[bool, Abonado | None]:
+    """Verifica si la placa corresponde a un abonado activo."""
+    abonado = (
+        db.query(Abonado)
+        .filter(Abonado.plate == plate, Abonado.active.is_(True))
+        .first()
+    )
+    return (abonado is not None, abonado)
+
+
 async def _create_ticket(plate: str, db: Session) -> dict:
     entry_time = datetime.datetime.utcnow()
-    ticket = Ticket(
-        plate=plate,
-        entry_time=entry_time,
-        rate_per_hour=settings.rate_per_hour,
-        status="open",
-    )
+
+    is_abonado, abonado = _is_active_abonado(plate, db)
+
+    if is_abonado:
+        ticket = Ticket(
+            plate=plate,
+            entry_time=entry_time,
+            rate_per_hour=0.0,
+            status="abono",
+            amount=0.0,
+        )
+    else:
+        ticket = Ticket(
+            plate=plate,
+            entry_time=entry_time,
+            rate_per_hour=settings.rate_per_hour,
+            status="open",
+        )
+
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
+
     await manager.broadcast({
         "event": "plate_detected",
         "plate": plate,
         "entry_time": entry_time.isoformat(),
         "ticket_id": ticket.id,
+        "is_abonado": is_abonado,
     })
-    return {"ticket_id": ticket.id, "plate": plate, "entry_time": entry_time.isoformat()}
+
+    return {
+        "ticket_id": ticket.id,
+        "plate": plate,
+        "entry_time": entry_time.isoformat(),
+        "is_abonado": is_abonado,
+        "abonado_name": abonado.name if abonado else None,
+    }
 
 
 @router.post("/")
 async def capture_and_register(db: Session = Depends(get_db)):
-    """Capture frame from camera, run OCR, register entry ticket."""
+    """Captura frame de la cámara, corre OCR y registra la entrada."""
     frame = camera_manager.read_frame()
     if frame is None:
         raise HTTPException(status_code=503, detail="Cámara no disponible")
@@ -47,7 +79,7 @@ async def capture_and_register(db: Session = Depends(get_db)):
 
     loop = asyncio.get_running_loop()
     try:
-        from lpr.detector import detect_plate  # lazy — avoids slow import at startup
+        from lpr.detector import detect_plate  # lazy — evita import lento al inicio
 
         plate, confidence, _ = await loop.run_in_executor(None, detect_plate, frame)
     except Exception as exc:
@@ -73,7 +105,7 @@ class ManualEntryRequest(BaseModel):
 
 @router.post("/manual")
 async def manual_register(req: ManualEntryRequest, db: Session = Depends(get_db)):
-    """Register entry with a manually typed plate (no camera required)."""
+    """Registra entrada con placa escrita manualmente (sin cámara)."""
     from lpr.utils import normalize_plate
 
     plate = normalize_plate(req.plate)

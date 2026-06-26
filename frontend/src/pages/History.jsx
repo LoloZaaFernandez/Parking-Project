@@ -4,13 +4,17 @@ const API = 'http://localhost:8000'
 const PER_PAGE = 20
 
 function Badge({ status }) {
-  const cls =
-    status === 'open'
-      ? 'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-600/40'
-      : 'bg-green-500/15 text-green-400 ring-1 ring-green-600/40'
+  const map = {
+    open:    { cls: 'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-600/40', label: 'Abierto' },
+    waiting: { cls: 'bg-orange-500/15 text-orange-400 ring-1 ring-orange-600/40', label: 'Esperando salida' },
+    exited:  { cls: 'bg-green-500/15 text-green-400 ring-1 ring-green-600/40',   label: 'Salió' },
+    paid:    { cls: 'bg-green-500/15 text-green-400 ring-1 ring-green-600/40',   label: 'Pagado' },
+    abono:   { cls: 'bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-600/40',      label: 'Abonado' },
+  }
+  const { cls, label } = map[status] ?? { cls: 'bg-gray-500/15 text-gray-400 ring-1 ring-gray-600/40', label: status }
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
-      {status === 'open' ? 'Abierto' : 'Pagado'}
+      {label}
     </span>
   )
 }
@@ -63,7 +67,11 @@ export default function History() {
       {stats && (
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="Tickets abiertos" value={stats.open} color="text-yellow-400" />
-          <StatCard label="Tickets cobrados" value={stats.paid} color="text-green-400" />
+          <StatCard
+            label="Tickets cobrados"
+            value={(stats.paid ?? 0) + (stats.exited ?? 0) + (stats.waiting ?? 0)}
+            color="text-green-400"
+          />
           <StatCard label={`Ingresos hoy (${stats.date})`} value={`S/ ${stats.total_income.toFixed(2)}`} color="text-blue-400" />
         </div>
       )}
@@ -85,7 +93,10 @@ export default function History() {
           >
             <option value="">Todos los estados</option>
             <option value="open">Abiertos</option>
-            <option value="paid">Pagados</option>
+            <option value="waiting">Esperando salida</option>
+            <option value="exited">Salieron</option>
+            <option value="paid">Pagados (legado)</option>
+            <option value="abono">Abonados</option>
           </select>
           <input
             type="date"

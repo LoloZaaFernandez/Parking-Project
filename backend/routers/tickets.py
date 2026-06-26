@@ -9,6 +9,9 @@ from models import Ticket
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
+# Statuses considerados "pagados/cerrados" (incluye legacy 'paid')
+_CLOSED_STATUSES = ("paid", "exited", "waiting")
+
 
 def _serialize(t: Ticket) -> dict:
     return {
@@ -19,6 +22,7 @@ def _serialize(t: Ticket) -> dict:
         "amount": t.amount,
         "rate_per_hour": t.rate_per_hour,
         "status": t.status,
+        "paid_at": t.paid_at.isoformat() if t.paid_at else None,
     }
 
 
@@ -30,10 +34,18 @@ def daily_stats(db: Session = Depends(get_db)):
 
     tickets = db.query(Ticket).filter(Ticket.entry_time.between(start, end)).all()
     open_count = sum(1 for t in tickets if t.status == "open")
-    paid_count = sum(1 for t in tickets if t.status == "paid")
-    total_income = round(sum(t.amount or 0 for t in tickets if t.status == "paid"), 2)
+    # 'paid' legacy + 'exited' + 'waiting' todos se consideran pagados
+    paid_count = sum(1 for t in tickets if t.status in _CLOSED_STATUSES)
+    total_income = round(
+        sum(t.amount or 0 for t in tickets if t.status in _CLOSED_STATUSES), 2
+    )
 
-    return {"date": today.isoformat(), "open": open_count, "paid": paid_count, "total_income": total_income}
+    return {
+        "date": today.isoformat(),
+        "open": open_count,
+        "paid": paid_count,
+        "total_income": total_income,
+    }
 
 
 @router.get("/search/{plate}")
@@ -41,6 +53,25 @@ def search_open(plate: str, db: Session = Depends(get_db)):
     ticket = (
         db.query(Ticket)
         .filter(Ticket.plate == plate.upper(), Ticket.status == "open")
+        .order_by(Ticket.entry_time.desc())
+        .first()
+    )
+    return _serialize(ticket) if ticket else None
+
+
+@router.get("/status/{plate}")
+def plate_status(plate: str, db: Session = Depends(get_db)):
+    """
+    Devuelve el ticket activo más reciente para una placa.
+    Útil para la cajera: muestra countdown si está en 'waiting'.
+    Excluye tickets ya cerrados ('exited', 'paid').
+    """
+    ticket = (
+        db.query(Ticket)
+        .filter(
+            Ticket.plate == plate.upper(),
+            Ticket.status.in_(["open", "abono", "waiting"]),
+        )
         .order_by(Ticket.entry_time.desc())
         .first()
     )
@@ -59,7 +90,11 @@ def list_tickets(
 ):
     q = db.query(Ticket)
     if status:
-        q = q.filter(Ticket.status == status)
+        # Al filtrar por 'paid', incluir también 'exited' (mismo significado semántico)
+        if status == "paid":
+            q = q.filter(Ticket.status.in_(["paid", "exited"]))
+        else:
+            q = q.filter(Ticket.status == status)
     if plate:
         q = q.filter(Ticket.plate.contains(plate.upper()))
     if date_from:
