@@ -25,6 +25,7 @@ class SettingsUpdate(BaseModel):
     camera_url: str | None = None
     camera_user: str | None = None
     camera_pass: str | None = None
+    printer_name: str | None = None
 
 
 @router.get("/")
@@ -34,6 +35,7 @@ def get_settings(_admin=Depends(require_admin)):
         "camera_url": settings.camera_source,
         "camera_user": settings.camera_user,
         "camera_pass": settings.camera_pass,
+        "printer_name": settings.printer_name,
     }
 
 
@@ -61,6 +63,8 @@ def update_settings(body: SettingsUpdate, _admin=Depends(require_admin)):
     if body.camera_pass is not None:
         settings.camera_pass = body.camera_pass
         camera_changed = True
+    if body.printer_name is not None:
+        settings.printer_name = body.printer_name.strip()
 
     # ── Reconectar cámara si cambió ─────────────────────────────────────
     if camera_changed:
@@ -80,6 +84,7 @@ def update_settings(body: SettingsUpdate, _admin=Depends(require_admin)):
         data["camera_source"] = settings.camera_source
         data["camera_user"] = settings.camera_user
         data["camera_pass"] = settings.camera_pass
+        data["printer_name"] = settings.printer_name
         with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except OSError as exc:
@@ -93,4 +98,19 @@ def update_settings(body: SettingsUpdate, _admin=Depends(require_admin)):
         "camera_url": settings.camera_source,
         "camera_user": settings.camera_user,
         "camera_pass": settings.camera_pass,
+        "printer_name": settings.printer_name,
     }
+
+
+@router.post("/test-print")
+def test_print_endpoint(_admin=Depends(require_admin)):
+    from ticket_printer import test_print
+
+    try:
+        test_print()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"No se pudo imprimir: {exc}",
+        ) from exc
+    return {"ok": True}

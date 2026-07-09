@@ -328,17 +328,24 @@ class CameraManager:
     # ------------------------------------------------------------------ #
 
     def reconfigure(self, source: str, user: str = "", password: str = "") -> None:
-        """Reconecta la cámara con nueva URL/credenciales sin detener la detección."""
+        """Reconecta la cámara con nueva URL/credenciales sin detener la detección.
+
+        settings.camera_source/user/pass ya vienen actualizados por el caller
+        (ver routers/settings.py), así que delegamos en _init_capture() para
+        cubrir todas las fuentes soportadas (MJPEG, RTSP/device vía OpenCV,
+        imagen estática, demo) con la misma lógica que el arranque inicial.
+        """
         logger.info("Reconfigurando cámara → %s", source)
         if self._mjpeg:
             self._mjpeg.release()
             self._mjpeg = None
-        if self._is_mjpeg_url(source):
-            self._mjpeg = MJPEGCapture(source, user=user, password=password)
-            ok = self._mjpeg.open()
-            logger.info("Cámara reconectada: %s", "OK" if ok else "FALLO")
-        else:
-            logger.warning("reconfigure: fuente no es una URL MJPEG — ignorado")
+        if self.cap:
+            self.cap.release()
+            self.cap = None
+        self._demo_mode = False
+        self._image_file = None
+        ok = self._init_capture()
+        logger.info("Cámara reconectada: %s", "OK" if ok else "FALLO")
 
     def stop(self) -> None:
         self.running = False

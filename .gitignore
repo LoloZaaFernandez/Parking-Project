@@ -19,6 +19,7 @@ env/
 # Environment
 .env
 !.env.example
+settings.json
 
 # EasyOCR model cache
 .EasyOCR/

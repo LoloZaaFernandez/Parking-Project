@@ -13,3 +13,5 @@ python-jose[cryptography]
 bcrypt
 fast-alpr==0.4.0
 onnxruntime==1.27.0
+python-escpos==3.1
+pywin32==306

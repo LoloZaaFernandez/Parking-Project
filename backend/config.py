@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     capture_interval: int = 2
     min_confidence: float = 0.45
     database_url: str = "sqlite:///./parking.db"
+    printer_name: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

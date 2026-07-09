@@ -55,6 +55,9 @@ def _load_persisted_settings() -> None:
             settings.camera_pass = data["camera_pass"]
         if any(k in data for k in ("camera_source", "camera_user", "camera_pass")):
             logger.info("Configuración de cámara cargada: %s", settings.camera_source)
+        if "printer_name" in data:
+            settings.printer_name = data["printer_name"]
+            logger.info("Impresora configurada: %s", settings.printer_name or "(ninguna)")
     except Exception as exc:
         logger.warning("No se pudo cargar settings.json: %s", exc)
 

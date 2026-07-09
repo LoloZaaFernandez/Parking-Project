@@ -2,11 +2,13 @@
 Service called by the camera when a plate is detected.
 Handles auto-entry registration and exit confirmation.
 """
+import asyncio
 from datetime import datetime, timedelta
 
 from database import SessionLocal
 from models import Abonado, Ticket
 from config import settings
+from ticket_printer import print_entry_ticket
 from ws_manager import manager
 
 # Plates that recently confirmed exit → block re-entry for N seconds.
@@ -96,4 +98,5 @@ async def handle_plate_detected(plate: str) -> dict:
             "is_abonado": bool(is_abonado),
             "ticket_id": ticket.id,
         })
+        asyncio.create_task(asyncio.to_thread(print_entry_ticket, ticket))
         return {"action": "auto_entry", "ticket_id": ticket.id}
