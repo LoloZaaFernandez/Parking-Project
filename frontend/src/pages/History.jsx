@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
+import { apiFetch } from '../api'
 
-const API = 'http://localhost:8000'
 const PER_PAGE = 20
 
 function Badge({ status }) {
@@ -21,7 +21,7 @@ function Badge({ status }) {
 
 function calcHours(entry, exit) {
   if (!exit) return '—'
-  const diff = (new Date(exit + 'Z') - new Date(entry + 'Z')) / 1000
+  const diff = (new Date(exit) - new Date(entry)) / 1000
   return Math.ceil(diff / 3600)
 }
 
@@ -44,15 +44,13 @@ export default function History() {
     if (filters.date_from) params.append('date_from', filters.date_from + 'T00:00:00')
     if (filters.date_to) params.append('date_to', filters.date_to + 'T23:59:59')
 
-    fetch(`${API}/tickets/?${params}`)
-      .then((r) => r.json())
+    apiFetch(`/tickets/?${params}`)
       .then((d) => { setTickets(d.items); setTotal(d.total) })
       .catch(() => {})
   }, [page, filters])
 
   useEffect(() => {
-    fetch(`${API}/tickets/stats`)
-      .then((r) => r.json())
+    apiFetch('/tickets/stats')
       .then(setStats)
       .catch(() => {})
   }, [])
@@ -137,10 +135,10 @@ export default function History() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-300 whitespace-nowrap">
-                    {new Date(t.entry_time + 'Z').toLocaleString('es-PE')}
+                    {new Date(t.entry_time).toLocaleString('es-PE')}
                   </td>
                   <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
-                    {t.exit_time ? new Date(t.exit_time + 'Z').toLocaleString('es-PE') : '—'}
+                    {t.exit_time ? new Date(t.exit_time).toLocaleString('es-PE') : '—'}
                   </td>
                   <td className="px-4 py-3 text-right text-gray-300">
                     {calcHours(t.entry_time, t.exit_time)}

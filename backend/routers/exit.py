@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Ticket
+from dependencies import get_current_user
+from models import Ticket, User
 
 router = APIRouter(prefix="/exit", tags=["exit"])
 
@@ -16,7 +17,11 @@ class ExitRequest(BaseModel):
 
 
 @router.post("/confirm")
-def confirm_exit_manual(req: ExitRequest, db: Session = Depends(get_db)):
+def confirm_exit_manual(
+    req: ExitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Confirmación manual de salida para vehículos en estado 'waiting'."""
     plate = req.plate.upper().strip()
 
@@ -32,7 +37,7 @@ def confirm_exit_manual(req: ExitRequest, db: Session = Depends(get_db)):
             detail=f"No hay ticket en espera para la placa {plate}",
         )
 
-    ticket.exit_time = datetime.datetime.utcnow()
+    ticket.exit_time = datetime.datetime.now()
     ticket.status = "exited"
     db.commit()
     db.refresh(ticket)
@@ -49,7 +54,11 @@ def confirm_exit_manual(req: ExitRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/")
-def register_exit(req: ExitRequest, db: Session = Depends(get_db)):
+def register_exit(
+    req: ExitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     plate = req.plate.upper().strip()
 
     # Verificar si ya está en estado 'waiting' (pagado, esperando salida física)
@@ -89,7 +98,7 @@ def register_exit(req: ExitRequest, db: Session = Depends(get_db)):
             detail=f"No hay ticket abierto para la placa {plate}",
         )
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now()
     elapsed_seconds = (now - ticket.entry_time).total_seconds()
     elapsed_hours = math.ceil(elapsed_seconds / 3600)
 

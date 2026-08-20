@@ -29,7 +29,7 @@ class Ticket(Base):
     rate_per_hour = Column(Float, nullable=False)
     status = Column(Text, default="open")
     paid_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.datetime.now)
 
 
 class User(Base):

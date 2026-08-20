@@ -2,11 +2,14 @@
 Dependencias de autenticación JWT para FastAPI.
 
 Usa python-jose para tokens y passlib[bcrypt] para hashing de contraseñas.
-SECRET_KEY se lee de la variable de entorno SECRET_KEY; si no existe se usa
-un valor de desarrollo (NO usar en producción sin setear la variable).
+SECRET_KEY se lee de la variable de entorno SECRET_KEY; si no existe, se
+genera una clave aleatoria una sola vez y se persiste en secret_key.json
+(fuera del control de versión) para que sobreviva reinicios del servidor.
 """
 
+import json
 import os
+import secrets
 from datetime import datetime, timedelta
 
 import bcrypt
@@ -22,10 +25,43 @@ from models import User
 # Configuración
 # ---------------------------------------------------------------------------
 
-SECRET_KEY: str = os.getenv(
-    "SECRET_KEY",
-    "dev-secret-key-cambiar-en-produccion-f3b2a1c9d8e7f6a5b4c3d2e1f0a9b8c7",
-)
+_SECRET_KEY_FILE = os.path.join(os.path.dirname(__file__), "secret_key.json")
+
+
+def _load_or_create_secret_key() -> str:
+    """
+    Resuelve la SECRET_KEY usada para firmar los JWT, en este orden:
+    1. Variable de entorno SECRET_KEY, si está seteada.
+    2. Clave persistida en secret_key.json, si el archivo ya existe.
+    3. Clave nueva generada con secrets.token_hex(32), que se guarda en
+       secret_key.json para reutilizarse en los próximos arranques (si se
+       generara una nueva en cada reinicio, se invalidarían todos los
+       tokens JWT emitidos previamente).
+    """
+    env_key = os.getenv("SECRET_KEY")
+    if env_key:
+        return env_key
+
+    if os.path.exists(_SECRET_KEY_FILE):
+        try:
+            with open(_SECRET_KEY_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            existing_key = data.get("secret_key")
+            if existing_key:
+                return existing_key
+        except Exception:
+            pass
+
+    new_key = secrets.token_hex(32)
+    try:
+        with open(_SECRET_KEY_FILE, "w", encoding="utf-8") as f:
+            json.dump({"secret_key": new_key}, f)
+    except Exception:
+        pass
+    return new_key
+
+
+SECRET_KEY: str = _load_or_create_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 horas
 

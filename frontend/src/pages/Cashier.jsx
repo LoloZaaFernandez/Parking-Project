@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { apiFetch } from '../api'
 import TicketCard from '../components/TicketCard'
 import { usePlateSocket } from '../hooks/usePlateSocket'
-
-const API = import.meta.env.DEV ? 'http://localhost:8000' : ''
 
 // ─── Receipt ──────────────────────────────────────────────────────────────────
 
@@ -30,8 +29,8 @@ function Receipt({ data, onClose }) {
             {data.plate}
           </span>
         </Row>
-        <Row label="Ingreso">{new Date(data.entry_time + 'Z').toLocaleString('es-PE')}</Row>
-        <Row label="Salida">{new Date(data.exit_time + 'Z').toLocaleString('es-PE')}</Row>
+        <Row label="Ingreso">{new Date(data.entry_time).toLocaleString('es-PE')}</Row>
+        <Row label="Salida">{new Date(data.exit_time).toLocaleString('es-PE')}</Row>
         <Row label="Duración">
           {data.elapsed_hours} hora{data.elapsed_hours !== 1 ? 's' : ''}
         </Row>
@@ -161,7 +160,7 @@ function AbonadoCard({ ticket, onRegister, loading }) {
         <p className="text-gray-400 text-sm">Sin cargo — acceso incluido en suscripción</p>
         {ticket.entry_time && (
           <p className="text-gray-500 text-xs">
-            Ingreso: {new Date(ticket.entry_time + 'Z').toLocaleTimeString('es-PE')}
+            Ingreso: {new Date(ticket.entry_time).toLocaleTimeString('es-PE')}
           </p>
         )}
       </div>
@@ -290,16 +289,7 @@ export default function Cashier() {
 
     try {
       // Try the status endpoint first to get richer data including paid_at
-      const res = await fetch(`${API}/tickets/status/${encodeURIComponent(q)}`)
-
-      if (res.status === 404) {
-        setState('not_found')
-        return
-      }
-
-      if (!res.ok) throw new Error('Error del servidor')
-
-      const data = await res.json()
+      const data = await apiFetch(`/tickets/status/${encodeURIComponent(q)}`)
 
       if (!data) {
         setState('not_found')
@@ -329,9 +319,7 @@ export default function Cashier() {
     } catch {
       // Fall back to old search endpoint if status endpoint doesn't exist yet
       try {
-        const res2 = await fetch(`${API}/tickets/search/${encodeURIComponent(q)}`)
-        if (!res2.ok) throw new Error('Error del servidor')
-        const data = await res2.json()
+        const data = await apiFetch(`/tickets/search/${encodeURIComponent(q)}`)
 
         if (!data) {
           setState('not_found')
@@ -366,16 +354,10 @@ export default function Cashier() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API}/exit/`, {
+      const data = await apiFetch('/exit/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plate: ticket.plate }),
       })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.detail ?? 'Error al cobrar')
-      }
-      const data = await res.json()
 
       if (data.status === 'waiting') {
         // New flow: paid, now waiting for physical exit
@@ -389,7 +371,7 @@ export default function Cashier() {
         setState('idle') // receipt takes over
       }
     } catch (err) {
-      setError(err.message)
+      setError(err.detail ?? 'Error al cobrar')
     } finally {
       setLoading(false)
     }
@@ -400,19 +382,14 @@ export default function Cashier() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API}/exit/confirm`, {
+      await apiFetch('/exit/confirm', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plate: waitingData.plate }),
       })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.detail ?? 'Error al confirmar salida')
-      }
       setState('exited')
       setWaitingData(null)
     } catch (err) {
-      setError(err.message)
+      setError(err.detail ?? 'Error al confirmar salida')
     } finally {
       setLoading(false)
     }
@@ -423,19 +400,14 @@ export default function Cashier() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API}/exit/`, {
+      await apiFetch('/exit/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plate: ticket.plate }),
       })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.detail ?? 'Error al registrar salida')
-      }
       setState('exited')
       setTicket(null)
     } catch (err) {
-      setError(err.message)
+      setError(err.detail ?? 'Error al registrar salida')
     } finally {
       setLoading(false)
     }

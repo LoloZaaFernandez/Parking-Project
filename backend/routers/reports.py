@@ -42,7 +42,7 @@ def monthly_summary(
     Incluye meses con al menos un ticket.
     """
     if year is None:
-        year = datetime.datetime.utcnow().year
+        year = datetime.datetime.now().year
 
     # Todos los tickets del año que ya tienen exit_time (cerrados)
     tickets = (

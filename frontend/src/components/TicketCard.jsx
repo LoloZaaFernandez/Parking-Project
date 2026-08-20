@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 function calcElapsed(entryIso) {
-  const diff = Math.max(0, Math.floor((Date.now() - new Date(entryIso + 'Z').getTime()) / 1000))
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(entryIso).getTime()) / 1000))
   const h = Math.floor(diff / 3600)
   const m = Math.floor((diff % 3600) / 60)
   const s = diff % 60
@@ -9,7 +9,7 @@ function calcElapsed(entryIso) {
 }
 
 function calcAmount(entryIso, rate) {
-  const diffSec = (Date.now() - new Date(entryIso + 'Z').getTime()) / 1000
+  const diffSec = (Date.now() - new Date(entryIso).getTime()) / 1000
   const hours = Math.ceil(diffSec / 3600)
   return (hours * rate).toFixed(2)
 }
@@ -41,7 +41,7 @@ export default function TicketCard({ ticket, onCheckout }) {
         <div>
           <p className="text-gray-500 mb-0.5">Hora de ingreso</p>
           <p className="text-white font-medium">
-            {new Date(ticket.entry_time + 'Z').toLocaleTimeString('es-PE')}
+            {new Date(ticket.entry_time).toLocaleTimeString('es-PE')}
           </p>
         </div>
         <div>

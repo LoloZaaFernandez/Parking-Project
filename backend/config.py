@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     rate_per_hour: float = 2.50
-    camera_source: str = "0"
+    camera_source: str = ""
     camera_user: str = ""
     camera_pass: str = ""
     capture_interval: int = 2

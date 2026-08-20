@@ -128,10 +128,10 @@ function MonthDetail({ year, month, monthName, onClose }) {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-300 whitespace-nowrap text-xs">
-                    {t.entry_time ? new Date(t.entry_time + 'Z').toLocaleString('es-PE') : '—'}
+                    {t.entry_time ? new Date(t.entry_time).toLocaleString('es-PE') : '—'}
                   </td>
                   <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">
-                    {t.exit_time ? new Date(t.exit_time + 'Z').toLocaleString('es-PE') : '—'}
+                    {t.exit_time ? new Date(t.exit_time).toLocaleString('es-PE') : '—'}
                   </td>
                   <td className="px-4 py-3 text-right text-gray-300 text-xs">
                     {duration(t.duration_minutes)}

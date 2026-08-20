@@ -1,7 +1,6 @@
 import asyncio
 import datetime
 import logging
-import random
 import threading
 import time
 import urllib.request
@@ -15,8 +14,6 @@ from config import settings
 from ws_manager import manager
 
 logger = logging.getLogger(__name__)
-
-_DEMO_PLATES = ["ABC-123", "XYZ-456", "DEF-789", "GHI-012", "JKL-345"]
 
 
 class MJPEGCapture:
@@ -88,7 +85,7 @@ class CameraManager:
         self._mjpeg: Optional[MJPEGCapture] = None
         self.last_detection: Optional[dict] = None
         self.running: bool = False
-        self._demo_mode: bool = False
+        self._configured: bool = True
         self._image_file: Optional[str] = None
 
         self._frame_lock = threading.Lock()
@@ -110,6 +107,10 @@ class CameraManager:
         with self._frame_lock:
             self._current_frame = frame
 
+    @property
+    def is_configured(self) -> bool:
+        return self._configured
+
     # ------------------------------------------------------------------ #
     # Init                                                                 #
     # ------------------------------------------------------------------ #
@@ -120,9 +121,11 @@ class CameraManager:
     def _init_capture(self) -> bool:
         import os
         source = settings.camera_source
-        if source.lower() == "demo":
-            self._demo_mode = True
+        if not source.strip():
+            self._configured = False
+            logger.info("Cámara no configurada — esperando configuración desde el panel de Settings")
             return True
+        self._configured = True
         if os.path.isfile(source) and source.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp")):
             self._image_file = source
             logger.info("Modo imagen estática: %s", source)
@@ -147,9 +150,8 @@ class CameraManager:
     # ------------------------------------------------------------------ #
 
     def _read_raw_frame(self) -> Optional[np.ndarray]:
-        if self._demo_mode:
-            plate = getattr(self, "_current_demo_plate", "ABC-123")
-            return self._make_demo_frame(plate)
+        if not self._configured:
+            return None
         if self._image_file:
             return cv2.imread(self._image_file)
         if self._mjpeg is not None:
@@ -272,17 +274,6 @@ class CameraManager:
 
         loop = asyncio.get_running_loop()
 
-        if self._demo_mode:
-            try:
-                while self.running:
-                    await self._run_demo_detection()
-                    await asyncio.sleep(settings.capture_interval)
-            except asyncio.CancelledError:
-                pass
-            finally:
-                self.stop()
-            return
-
         self._capture_thread = threading.Thread(
             target=self._capture_loop, daemon=True, name="camera-capture"
         )
@@ -303,27 +294,6 @@ class CameraManager:
             logger.info("Cámara detenida correctamente")
 
     # ------------------------------------------------------------------ #
-    # Demo detection                                                       #
-    # ------------------------------------------------------------------ #
-
-    async def _run_demo_detection(self) -> None:
-        plate = random.choice(_DEMO_PLATES)
-        detection = {
-            "plate": plate,
-            "confidence": round(random.uniform(0.88, 0.99), 2),
-            "bbox": (220, 330, 200, 48),
-            "timestamp": datetime.datetime.utcnow().isoformat(),
-        }
-        self.last_detection = detection
-        await manager.broadcast({
-            "event": "plate_detected",
-            "plate": plate,
-            "confidence": detection["confidence"],
-            "timestamp": detection["timestamp"],
-        })
-        await handle_plate_detected(plate)
-
-    # ------------------------------------------------------------------ #
     # Stop                                                                 #
     # ------------------------------------------------------------------ #
 
@@ -333,7 +303,7 @@ class CameraManager:
         settings.camera_source/user/pass ya vienen actualizados por el caller
         (ver routers/settings.py), así que delegamos en _init_capture() para
         cubrir todas las fuentes soportadas (MJPEG, RTSP/device vía OpenCV,
-        imagen estática, demo) con la misma lógica que el arranque inicial.
+        imagen estática) con la misma lógica que el arranque inicial.
         """
         logger.info("Reconfigurando cámara → %s", source)
         if self._mjpeg:
@@ -342,7 +312,6 @@ class CameraManager:
         if self.cap:
             self.cap.release()
             self.cap = None
-        self._demo_mode = False
         self._image_file = None
         ok = self._init_capture()
         logger.info("Cámara reconectada: %s", "OK" if ok else "FALLO")

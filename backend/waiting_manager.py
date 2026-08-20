@@ -14,13 +14,13 @@ GRACE_PERIOD_MINUTES = 15
 async def watch_waiting_tickets():
     """
     Background task: every 30 seconds, find 'waiting' tickets where
-    paid_at + 10 minutes < now, and revert them to 'open'.
+    paid_at + 15 minutes < now, and revert them to 'open'.
     """
     while True:
         await asyncio.sleep(30)
         try:
             with SessionLocal() as db:
-                cutoff = datetime.utcnow() - timedelta(minutes=GRACE_PERIOD_MINUTES)
+                cutoff = datetime.now() - timedelta(minutes=GRACE_PERIOD_MINUTES)
                 expired = db.query(Ticket).filter(
                     Ticket.status == "waiting",
                     Ticket.paid_at < cutoff,

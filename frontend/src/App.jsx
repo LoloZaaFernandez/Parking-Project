@@ -7,11 +7,13 @@ import History from './pages/History'
 import Reports from './pages/admin/Reports'
 import Settings from './pages/admin/Settings'
 import Abonados from './pages/admin/Abonados'
+import Account from './pages/Account'
 
 // Tab definitions per role
 const CASHIER_TABS = [
   { id: 'monitor', label: 'Monitor' },
   { id: 'cashier', label: 'Caja' },
+  { id: 'account', label: 'Mi cuenta' },
 ]
 
 const ADMIN_TABS = [
@@ -21,6 +23,7 @@ const ADMIN_TABS = [
   { id: 'abonados', label: 'Abonados' },
   { id: 'reports', label: 'Reportes' },
   { id: 'settings', label: 'Configuración' },
+  { id: 'account', label: 'Mi cuenta' },
 ]
 
 function MainApp() {
@@ -83,6 +86,7 @@ function MainApp() {
         {validTab === 'abonados'  && isAdmin && <Abonados />}
         {validTab === 'reports'   && isAdmin && <Reports />}
         {validTab === 'settings'  && isAdmin && <Settings />}
+        {validTab === 'account'   && <Account />}
       </main>
     </div>
   )

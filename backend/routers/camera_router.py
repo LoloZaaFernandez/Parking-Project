@@ -1,24 +1,28 @@
 import os
 
 import cv2
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
+
+from dependencies import get_current_user
+from models import User
 
 router = APIRouter(prefix="/camera", tags=["camera"])
 
 
 @router.get("/status")
-def camera_status():
+def camera_status(current_user: User = Depends(get_current_user)):
     from lpr.camera import camera_manager
     return {
         "active": camera_manager.running,
         "has_frame": camera_manager.current_frame is not None,
         "last_detection": camera_manager.last_detection,
+        "configured": camera_manager.is_configured,
     }
 
 
 @router.get("/save-frame")
-def save_frame():
+def save_frame(current_user: User = Depends(get_current_user)):
     """Guarda el frame actual a disco y devuelve metadatos. Solo para debug."""
     from lpr.camera import camera_manager
     frame = camera_manager.current_frame
@@ -32,7 +36,7 @@ def save_frame():
 
 
 @router.get("/frame.jpg")
-def get_frame_jpg():
+def get_frame_jpg(current_user: User = Depends(get_current_user)):
     """Devuelve el frame actual como imagen JPEG. Solo para debug."""
     from lpr.camera import camera_manager
     import tempfile
@@ -45,7 +49,7 @@ def get_frame_jpg():
 
 
 @router.get("/detect-now")
-def detect_now():
+def detect_now(current_user: User = Depends(get_current_user)):
     """Corre detección sincrónicamente sobre el frame actual. Solo para debug."""
     from lpr.camera import camera_manager
     from lpr.detector import detect_plate

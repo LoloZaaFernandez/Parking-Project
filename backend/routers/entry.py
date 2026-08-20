@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from config import settings
 from database import get_db
+from dependencies import get_current_user
 from lpr.camera import camera_manager
-from models import Abonado, Ticket
+from models import Abonado, Ticket, User
 from ws_manager import manager
 
 router = APIRouter(prefix="/entry", tags=["entry"])
@@ -25,7 +26,7 @@ def _is_active_abonado(plate: str, db: Session) -> tuple[bool, Abonado | None]:
 
 
 async def _create_ticket(plate: str, db: Session) -> dict:
-    entry_time = datetime.datetime.utcnow()
+    entry_time = datetime.datetime.now()
 
     is_abonado, abonado = _is_active_abonado(plate, db)
 
@@ -67,15 +68,14 @@ async def _create_ticket(plate: str, db: Session) -> dict:
 
 
 @router.post("/")
-async def capture_and_register(db: Session = Depends(get_db)):
+async def capture_and_register(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Captura frame de la cámara, corre OCR y registra la entrada."""
-    frame = camera_manager.read_frame()
+    frame = camera_manager.current_frame
     if frame is None:
         raise HTTPException(status_code=503, detail="Cámara no disponible")
-
-    if camera_manager._demo_mode:
-        plate = getattr(camera_manager, "_current_demo_plate", "ABC-123")
-        return await _create_ticket(plate, db)
 
     loop = asyncio.get_running_loop()
     try:
@@ -104,7 +104,11 @@ class ManualEntryRequest(BaseModel):
 
 
 @router.post("/manual")
-async def manual_register(req: ManualEntryRequest, db: Session = Depends(get_db)):
+async def manual_register(
+    req: ManualEntryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Registra entrada con placa escrita manualmente (sin cámara)."""
     from lpr.utils import normalize_plate
 

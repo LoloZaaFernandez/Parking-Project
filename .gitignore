@@ -20,9 +20,13 @@ env/
 .env
 !.env.example
 settings.json
+secret_key.json
 
 # EasyOCR model cache
 .EasyOCR/
+
+# Debug frames guardados por /camera/save-frame y /camera/frame.jpg
+backend/debug_*.jpg
 
 # Node
 node_modules/

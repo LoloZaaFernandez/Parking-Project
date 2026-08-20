@@ -55,7 +55,7 @@ async def handle_plate_detected(plate: str) -> dict:
             Ticket.status == "waiting",
         ).first()
         if waiting:
-            waiting.exit_time = datetime.utcnow()
+            waiting.exit_time = datetime.now()
             waiting.status = "exited"
             db.commit()
             _set_cooldown(plate_upper)
@@ -83,7 +83,7 @@ async def handle_plate_detected(plate: str) -> dict:
 
         ticket = Ticket(
             plate=plate_upper,
-            entry_time=datetime.utcnow(),
+            entry_time=datetime.now(),
             rate_per_hour=0.0 if is_abonado else settings.rate_per_hour,
             status="abono" if is_abonado else "open",
             amount=0.0,

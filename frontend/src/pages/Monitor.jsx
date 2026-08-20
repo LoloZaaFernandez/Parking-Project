@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
+import { apiFetch } from '../api'
 import PlateDisplay from '../components/PlateDisplay'
 import { usePlateSocket } from '../hooks/usePlateSocket'
 
-const API = 'http://localhost:8000'
-
-function StatusDot({ active }) {
+function StatusDot({ active, configured }) {
+  if (configured === false) {
+    return (
+      <span className="flex items-center gap-1.5 text-sm">
+        <span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse" />
+        <span className="text-yellow-400">Esperando configuración de cámara</span>
+      </span>
+    )
+  }
   return (
     <span className="flex items-center gap-1.5 text-sm">
       <span className={`inline-block w-2.5 h-2.5 rounded-full ${active ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
@@ -27,10 +34,29 @@ export default function Monitor() {
   const [capturing, setCapturing] = useState(false)
   const [flash, setFlash] = useState(false)
   const [now, setNow] = useState(Date.now())
+  const [cameraConfigured, setCameraConfigured] = useState(true)
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const checkCameraStatus = async () => {
+      try {
+        const status = await apiFetch('/camera/status')
+        if (!cancelled && status) setCameraConfigured(status.configured)
+      } catch {
+        // ignora — no bloquea el resto del monitor
+      }
+    }
+    checkCameraStatus()
+    const id = setInterval(checkCameraStatus, 15_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
   }, [])
 
   const visibleEntries = useMemo(
@@ -49,13 +75,9 @@ export default function Monitor() {
   const handleCapture = async () => {
     setCapturing(true)
     try {
-      const res = await fetch(`${API}/entry/`, { method: 'POST' })
-      if (!res.ok) {
-        const data = await res.json()
-        alert(data.detail ?? 'Error al capturar')
-      }
-    } catch {
-      alert('No se pudo conectar con el servidor')
+      await apiFetch('/entry/', { method: 'POST' })
+    } catch (err) {
+      alert(err.detail ?? 'No se pudo conectar con el servidor')
     } finally {
       setCapturing(false)
     }
@@ -68,7 +90,7 @@ export default function Monitor() {
       <section className="lg:col-span-2 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Monitor LPR</h2>
-          <StatusDot active={connected} />
+          <StatusDot active={connected} configured={cameraConfigured} />
         </div>
 
         {/* Última detección — panel grande */}

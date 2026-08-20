@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Ticket
+from dependencies import get_current_user
+from models import Ticket, User
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -27,7 +28,10 @@ def _serialize(t: Ticket) -> dict:
 
 
 @router.get("/stats")
-def daily_stats(db: Session = Depends(get_db)):
+def daily_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     today = datetime.date.today()
     start = datetime.datetime.combine(today, datetime.time.min)
     end = datetime.datetime.combine(today, datetime.time.max)
@@ -49,7 +53,11 @@ def daily_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/search/{plate}")
-def search_open(plate: str, db: Session = Depends(get_db)):
+def search_open(
+    plate: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     ticket = (
         db.query(Ticket)
         .filter(Ticket.plate == plate.upper(), Ticket.status == "open")
@@ -60,7 +68,11 @@ def search_open(plate: str, db: Session = Depends(get_db)):
 
 
 @router.get("/status/{plate}")
-def plate_status(plate: str, db: Session = Depends(get_db)):
+def plate_status(
+    plate: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Devuelve el ticket activo más reciente para una placa.
     Útil para la cajera: muestra countdown si está en 'waiting'.
@@ -87,6 +99,7 @@ def list_tickets(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     q = db.query(Ticket)
     if status:
