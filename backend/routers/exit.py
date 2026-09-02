@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import math
 
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user
 from models import Ticket, User
+from ticket_printer import print_exit_ticket
 
 router = APIRouter(prefix="/exit", tags=["exit"])
 
@@ -54,7 +56,7 @@ def confirm_exit_manual(
 
 
 @router.post("/")
-def register_exit(
+async def register_exit(
     req: ExitRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -81,7 +83,7 @@ def register_exit(
             "message": "Ticket ya pagado, esperando confirmación de salida física.",
         }
 
-    # Buscar ticket abierto (status 'open') O ticket de abonado (status 'abono')
+    # Buscar ticket abierto (status 'open')
     ticket: Ticket | None = (
         db.query(Ticket)
         .filter(
@@ -102,27 +104,6 @@ def register_exit(
     elapsed_seconds = (now - ticket.entry_time).total_seconds()
     elapsed_hours = math.ceil(elapsed_seconds / 3600)
 
-    is_abonado = ticket.status == "abono"
-
-    if is_abonado:
-        # Abonado: registrar salida inmediata como 'exited', sin cobro, sin período de espera
-        ticket.exit_time = now
-        ticket.amount = 0.0
-        ticket.status = "exited"
-        db.commit()
-        db.refresh(ticket)
-        return {
-            "ticket_id": ticket.id,
-            "plate": ticket.plate,
-            "entry_time": ticket.entry_time.isoformat(),
-            "exit_time": ticket.exit_time.isoformat(),
-            "elapsed_hours": elapsed_hours,
-            "amount": ticket.amount,
-            "rate_per_hour": ticket.rate_per_hour,
-            "is_abonado": True,
-            "status": "exited",
-        }
-
     # Ticket normal: calcular monto, marcar como 'waiting' (pagado, esperando salida física)
     amount = round(elapsed_hours * ticket.rate_per_hour, 2)
     ticket.amount = amount
@@ -132,6 +113,8 @@ def register_exit(
 
     db.commit()
     db.refresh(ticket)
+
+    asyncio.create_task(asyncio.to_thread(print_exit_ticket, ticket))
 
     return {
         "ticket_id": ticket.id,

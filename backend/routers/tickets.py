@@ -1,11 +1,11 @@
 import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from database import get_db
-from dependencies import get_current_user
+from dependencies import get_current_user, require_admin
 from models import Ticket, User
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -30,7 +30,7 @@ def _serialize(t: Ticket) -> dict:
 @router.get("/stats")
 def daily_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _admin=Depends(require_admin),
 ):
     today = datetime.date.today()
     start = datetime.datetime.combine(today, datetime.time.min)
@@ -99,7 +99,7 @@ def list_tickets(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _admin=Depends(require_admin),
 ):
     q = db.query(Ticket)
     if status:
@@ -119,3 +119,21 @@ def list_tickets(
     items = q.order_by(Ticket.entry_time.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
     return {"total": total, "page": page, "per_page": per_page, "items": [_serialize(t) for t in items]}
+
+
+@router.delete("/{ticket_id}")
+def delete_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    """
+    Borra un ticket de forma permanente (hard delete). Solo admin.
+    """
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+
+    db.delete(ticket)
+    db.commit()
+    return {"deleted": True, "ticket_id": ticket_id}

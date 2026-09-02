@@ -26,25 +26,30 @@ def _is_active_abonado(plate: str, db: Session) -> tuple[bool, Abonado | None]:
 
 
 async def _create_ticket(plate: str, db: Session) -> dict:
-    entry_time = datetime.datetime.now()
-
     is_abonado, abonado = _is_active_abonado(plate, db)
 
     if is_abonado:
-        ticket = Ticket(
-            plate=plate,
-            entry_time=entry_time,
-            rate_per_hour=0.0,
-            status="abono",
-            amount=0.0,
-        )
-    else:
-        ticket = Ticket(
-            plate=plate,
-            entry_time=entry_time,
-            rate_per_hour=settings.rate_per_hour,
-            status="open",
-        )
+        # Abonados don't leave any trace: no Ticket row, no print. Just a
+        # transient WS notification for the live Monitor.
+        await manager.broadcast({
+            "type": "abonado_pass",
+            "plate": plate,
+        })
+        return {
+            "is_abonado": True,
+            "plate": plate,
+            "abonado_name": abonado.name,
+            "message": "Abonado reconocido, no requiere ticket",
+        }
+
+    entry_time = datetime.datetime.now()
+
+    ticket = Ticket(
+        plate=plate,
+        entry_time=entry_time,
+        rate_per_hour=settings.rate_per_hour,
+        status="open",
+    )
 
     db.add(ticket)
     db.commit()
@@ -55,15 +60,15 @@ async def _create_ticket(plate: str, db: Session) -> dict:
         "plate": plate,
         "entry_time": entry_time.isoformat(),
         "ticket_id": ticket.id,
-        "is_abonado": is_abonado,
+        "is_abonado": False,
     })
 
     return {
         "ticket_id": ticket.id,
         "plate": plate,
         "entry_time": entry_time.isoformat(),
-        "is_abonado": is_abonado,
-        "abonado_name": abonado.name if abonado else None,
+        "is_abonado": False,
+        "abonado_name": None,
     }
 
 

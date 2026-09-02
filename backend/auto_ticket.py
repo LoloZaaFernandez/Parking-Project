@@ -36,14 +36,32 @@ async def handle_plate_detected(plate: str) -> dict:
     Called every time the camera detects a valid plate.
 
     Logic:
+    0. If plate belongs to an active abonado → no trace at all: no Ticket,
+       no print, no cooldown, no ticket-related logic whatsoever.
     1. If plate is in exit cooldown → skip (prevents ghost re-entry after exit)
     2. If ticket is in 'waiting' status → confirm exit (set status='exited', exit_time=now)
-    3. If ticket is 'open' or 'abono' → already inside, do nothing
-    4. If no active ticket → auto-register entry (check if abonado first)
+    3. If ticket is 'open' → already inside, do nothing
+    4. If no active ticket → auto-register entry
 
-    Returns dict with 'action' key: 'exit_confirmed' | 'already_inside' | 'auto_entry' | 'cooldown'
+    Returns dict with 'action' key:
+    'abonado' | 'exit_confirmed' | 'already_inside' | 'auto_entry' | 'cooldown'
     """
     plate_upper = plate.upper()
+
+    with SessionLocal() as db:
+        is_abonado = db.query(Abonado).filter(
+            Abonado.plate == plate_upper,
+            Abonado.active.is_(True),
+        ).first()
+        if is_abonado:
+            # Abonados don't leave any trace: no Ticket row, no print, no
+            # cooldown bookkeeping. Only a transient (non-persisted) WS
+            # notification so the live Monitor can flash "abonado reconocido".
+            await manager.broadcast({
+                "type": "abonado_pass",
+                "plate": plate_upper,
+            })
+            return {"action": "abonado", "plate": plate_upper}
 
     if _in_cooldown(plate_upper):
         return {"action": "cooldown", "plate": plate_upper}
@@ -67,7 +85,7 @@ async def handle_plate_detected(plate: str) -> dict:
             })
             return {"action": "exit_confirmed", "ticket_id": waiting.id}
 
-        # Check if already has open/abono ticket
+        # Check if already has an open ticket
         open_ticket = db.query(Ticket).filter(
             Ticket.plate == plate_upper,
             Ticket.status.in_(["open", "abono"]),
@@ -75,17 +93,12 @@ async def handle_plate_detected(plate: str) -> dict:
         if open_ticket:
             return {"action": "already_inside", "ticket_id": open_ticket.id}
 
-        # Auto-register entry
-        is_abonado = db.query(Abonado).filter(
-            Abonado.plate == plate_upper,
-            Abonado.active.is_(True),
-        ).first()
-
+        # Auto-register entry (abonados were already filtered out above)
         ticket = Ticket(
             plate=plate_upper,
             entry_time=datetime.now(),
-            rate_per_hour=0.0 if is_abonado else settings.rate_per_hour,
-            status="abono" if is_abonado else "open",
+            rate_per_hour=settings.rate_per_hour,
+            status="open",
             amount=0.0,
         )
         db.add(ticket)
@@ -95,7 +108,7 @@ async def handle_plate_detected(plate: str) -> dict:
         await manager.broadcast({
             "type": "auto_entry",
             "plate": plate_upper,
-            "is_abonado": bool(is_abonado),
+            "is_abonado": False,
             "ticket_id": ticket.id,
         })
         asyncio.create_task(asyncio.to_thread(print_entry_ticket, ticket))

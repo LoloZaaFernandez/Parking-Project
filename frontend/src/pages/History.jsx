@@ -55,6 +55,17 @@ export default function History() {
       .catch(() => {})
   }, [])
 
+  async function handleDelete(id) {
+    if (!confirm('¿Seguro que querés borrar este ticket? Esta acción no se puede deshacer.')) return
+    try {
+      await apiFetch(`/tickets/${id}`, { method: 'DELETE' })
+      setTickets((prev) => prev.filter((t) => t.id !== id))
+      setTotal((prev) => prev - 1)
+    } catch (err) {
+      alert(err?.detail ?? 'No se pudo eliminar el ticket')
+    }
+  }
+
   const totalPages = Math.ceil(total / PER_PAGE)
 
   return (
@@ -123,6 +134,7 @@ export default function History() {
                 <th className="px-4 py-3 text-right">Horas</th>
                 <th className="px-4 py-3 text-right">Monto</th>
                 <th className="px-4 py-3 text-center">Estado</th>
+                <th className="px-4 py-3 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -152,6 +164,17 @@ export default function History() {
                   </td>
                   <td className="px-4 py-3 text-center">
                     <Badge status={t.status} />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      onClick={() => handleDelete(t.id)}
+                      title="Borrar ticket"
+                      className="px-2 py-1 rounded text-xs font-medium text-red-400
+                                 bg-red-500/10 ring-1 ring-red-600/40
+                                 hover:bg-red-500/20 hover:text-red-300 transition-colors"
+                    >
+                      Borrar
+                    </button>
                   </td>
                 </tr>
               ))}
