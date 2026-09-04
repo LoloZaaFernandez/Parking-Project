@@ -18,7 +18,7 @@ Editar `backend/.env`:
 
 ```env
 RATE_PER_HOUR=2.50
-CAMERA_SOURCE=rtsp://usuario:pass@192.168.1.50:554/stream   # o "0" para webcam, "demo" para modo demo
+CAMERA_SOURCE=rtsp://usuario:pass@192.168.1.50:554/stream   # o "0" para webcam, vacío = esperando configuración
 CAMERA_USER=
 CAMERA_PASS=
 CAPTURE_INTERVAL=2     # segundos entre detecciones automáticas
@@ -29,7 +29,7 @@ PRINTER_NAME=          # nombre exacto de la impresora en "Dispositivos e impres
 
 > **Cámara IP (caso principal):** `CAMERA_SOURCE` acepta una URL RTSP (usada directamente por OpenCV) o una URL MJPEG sobre HTTP (`http://...`). También soporta `CAMERA_USER`/`CAMERA_PASS` para autenticación básica en el stream MJPEG. Todo esto también se puede reconfigurar en caliente desde el panel de administración (**Configuración**) sin reiniciar el backend.
 >
-> **Modo demo (sin cámara física):** setear `CAMERA_SOURCE=demo`. El sistema simula detecciones automáticas para probar el flujo completo sin hardware.
+> **Sin cámara configurada:** si `CAMERA_SOURCE` queda vacío, el backend arranca igual pero la cámara queda "esperando configuración" (`CameraManager.is_configured = False`, sin capturar ni detectar nada) hasta que se cargue una URL válida desde el panel de **Configuración**. Ya no existe ningún modo demo ni simulación de detecciones — fue removido del código.
 
 ---
 
@@ -96,21 +96,22 @@ parking-system/
 │   ├── database.py           # SQLAlchemy + SQLite
 │   ├── models.py             # Modelos Ticket, User, Abonado
 │   ├── dependencies.py       # JWT, hash de contraseñas, require_admin/get_current_user
+│   ├── parking_rules.py      # Constantes de reglas de negocio: EXIT_TOLERANCE_MINUTES (tolerancia de salida, compartida entre cooldown y período de gracia)
 │   ├── auto_ticket.py        # Lógica de entrada/salida automática al detectar placa
 │   ├── waiting_manager.py    # Monitorea tickets en estado 'waiting' (período de gracia)
-│   ├── ticket_printer.py     # Impresión ESC/POS (python-escpos + pywin32)
+│   ├── ticket_printer.py     # Impresión ESC/POS (python-escpos + pywin32): ticket de entrada y voucher de pago
 │   ├── ws_manager.py         # WebSocket broadcast manager
 │   ├── lpr/
-│   │   ├── camera.py         # Captura (RTSP/MJPEG/webcam/demo) + loop de detección
+│   │   ├── camera.py         # Captura (RTSP/MJPEG/webcam) + loop de detección
 │   │   ├── detector.py       # fast-alpr (YOLOv9 + MobileViT OCR vía ONNX Runtime)
 │   │   └── utils.py          # Normalización de placas peruanas
 │   ├── routers/
 │   │   ├── entry.py          # POST /entry, POST /entry/manual
 │   │   ├── exit.py           # POST /exit, POST /exit/confirm
-│   │   ├── tickets.py        # GET /tickets, /stats, /search, /status
+│   │   ├── tickets.py        # GET /tickets, /stats, /search, /status, DELETE /tickets/{id}
 │   │   ├── ws.py             # WebSocket /ws/plates
 │   │   ├── camera_router.py  # GET /camera/status, /camera/frame.jpg
-│   │   ├── auth.py           # POST /auth/login, GET /auth/me, /auth/change-password
+│   │   ├── auth.py           # POST /auth/login, GET /auth/me, /auth/change-password, gestión de usuarios (admin)
 │   │   ├── abonados.py       # CRUD de abonados (mensualidades)
 │   │   ├── reports.py        # GET /reports/monthly (solo admin)
 │   │   └── settings.py       # GET/PUT /settings, /settings/test-print (solo admin)
@@ -130,7 +131,8 @@ parking-system/
 │       │   └── admin/
 │       │       ├── Abonados.jsx  # Gestión de vehículos con mensualidad
 │       │       ├── Reports.jsx   # Reportes mensuales
-│       │       └── Settings.jsx  # Tarifa, cámara e impresora
+│       │       ├── Settings.jsx  # Tarifa, cámara e impresora
+│       │       └── Usuarios.jsx  # Alta/baja de cuentas cajero y admin
 │       ├── components/
 │       │   ├── PlateDisplay.jsx
 │       │   └── TicketCard.jsx
@@ -149,12 +151,16 @@ Ciclo de vida completo de un ticket, desde que el auto entra hasta que sale y se
 
 ### 2. `auto_ticket.handle_plate_detected(plate)` decide la acción
 
-Según el estado actual de esa placa en la base:
+Lo primero que hace, antes de cualquier otra lógica, es chequear si la placa pertenece a un **abonado activo**:
 
-- **En cooldown de salida** (60 segundos tras una salida confirmada, constante `_COOLDOWN_SECONDS = 60`) → se ignora la detección, para evitar que la cámara vuelva a "ver" el auto saliendo y genere una re-entrada fantasma.
-- **Tiene un ticket en estado `waiting`** (ya pagó en caja, está esperando salir físicamente) → se confirma la salida: `status='exited'`, `exit_time=ahora`, se activa el cooldown de 60s y se notifica por WebSocket (`exit_confirmed`).
-- **Ya tiene un ticket `open` o `abono`** (ya está adentro) → no hace nada (acción `already_inside`).
-- **No tiene ticket activo** → se auto-registra la entrada: se chequea si la placa pertenece a un abonado activo (tarifa $0, `status='abono'`) o no (tarifa `settings.rate_per_hour`, `status='open'`), se crea el `Ticket`, se imprime el ticket de entrada en la térmica en segundo plano (`print_entry_ticket`, vía `asyncio.to_thread` — no bloquea el hilo de detección) y se notifica por WebSocket (`auto_entry`).
+- **Es abonado activo** → no deja ningún rastro en el sistema: no se crea ningún `Ticket`, no se imprime nada, no se toca el cooldown de salida. Solo se emite un WebSocket transitorio y no persistido (`abonado_pass`) para que el Monitor en vivo muestre "abonado reconocido". Acción devuelta: `abonado`.
+
+Si no es abonado, sigue la lógica normal según el estado de esa placa en la base:
+
+- **En cooldown de salida** (`EXIT_TOLERANCE_MINUTES = 5` minutos tras una salida confirmada — constante única definida en `backend/parking_rules.py`, compartida con el período de gracia del punto 6) → se ignora la detección, para evitar que la cámara vuelva a "ver" el auto saliendo y genere una re-entrada fantasma.
+- **Tiene un ticket en estado `waiting`** (ya pagó en caja, está esperando salir físicamente) → se confirma la salida: `status='exited'`, `exit_time=ahora`, se activa el cooldown de 5 minutos (`set_exit_cooldown`) y se notifica por WebSocket (`exit_confirmed`).
+- **Ya tiene un ticket `open`** (o `abono`, legacy — el flujo automático actual ya no crea tickets con ese status) → no hace nada (acción `already_inside`).
+- **No tiene ticket activo** → se auto-registra la entrada: como los abonados ya quedaron descartados en el primer paso, siempre se crea con tarifa `settings.rate_per_hour` y `status='open'`, se imprime el ticket de entrada en la térmica en segundo plano (`print_entry_ticket`, vía `asyncio.to_thread` — no bloquea el hilo de detección) y se notifica por WebSocket (`auto_entry`).
 
 ### 3. Entrada manual (sin cámara)
 
@@ -164,19 +170,21 @@ Según el estado actual de esa placa en la base:
 
 `POST /exit/` (`backend/routers/exit.py`, función `register_exit`):
 
-- **Abonado** (`status='abono'`) → sale gratis e inmediato: `status='exited'` directo, sin período de espera.
-- **Ticket normal** → calcula el monto (horas transcurridas redondeadas hacia arriba con `math.ceil`, multiplicadas por `rate_per_hour`), pero **no cierra el ticket todavía**: pasa a `status='waiting'` con `paid_at=ahora`. El vehículo ya pagó pero sigue "adentro" en el sistema hasta que la cámara confirme que salió físicamente.
+- Si la placa ya tiene un ticket `waiting` (ya se cobró antes), devuelve ese mismo estado sin volver a cobrar.
+- Si no, busca un ticket abierto (`status` en `open`/`abono` — este último solo queda como compatibilidad con tickets viejos, ya que el flujo automático actual nunca genera tickets `abono`) y calcula el monto: horas transcurridas redondeadas hacia arriba con `math.ceil`, multiplicadas por `rate_per_hour`.
+- El ticket **no se cierra todavía**: pasa a `status='waiting'` con `paid_at=ahora`. El vehículo ya pagó pero sigue "adentro" en el sistema hasta que la cámara confirme que salió físicamente.
+- Se dispara en segundo plano la impresión del **voucher de pago** (`print_exit_ticket`, vía `asyncio.create_task(asyncio.to_thread(...))` — no bloquea la respuesta HTTP), con la hora de **pago** (`paid_at`, no la de salida física), el monto cobrado y la tarifa por hora.
 
 ### 5. Confirmación de salida física
 
-Dos caminos posibles:
+Dos caminos posibles, y ambos activan el mismo cooldown de salida (`set_exit_cooldown`, definido en `backend/auto_ticket.py`) para que la cámara no vuelva a registrar el mismo auto como una entrada nueva mientras todavía está saliendo del campo de visión:
 
 - **Automático**: la cámara vuelve a detectar la placa al pasar por la salida — mismo mecanismo del punto 2 (`handle_plate_detected`).
-- **Manual**: `POST /exit/confirm` (`backend/routers/exit.py`, función `confirm_exit_manual`), para cuando la cámara no llega a captar la salida.
+- **Manual**: `POST /exit/confirm` (`backend/routers/exit.py`, función `confirm_exit_manual`), para cuando la cámara no llega a captar la salida. Antes esta vía no activaba el cooldown (era un bug: el auto podía terminar re-registrado como entrada nueva mientras cruzaba la cámara de salida); ahora sí, llamando a la misma `set_exit_cooldown` que usa el flujo automático.
 
 ### 6. Período de gracia
 
-`watch_waiting_tickets()` (`backend/waiting_manager.py`) corre en background cada 30 segundos. Si un ticket en `waiting` lleva más de `GRACE_PERIOD_MINUTES = 15` minutos desde `paid_at` sin que la cámara confirme la salida, el ticket **vuelve a `open`**: se borran `amount` y `paid_at`, como si no hubiera pagado. Esto evita que un pago quede "reservado" indefinidamente si el vehículo tarda mucho en salir del predio.
+`watch_waiting_tickets()` (`backend/waiting_manager.py`) corre en background cada 30 segundos. Si un ticket en `waiting` lleva más de `EXIT_TOLERANCE_MINUTES = 5` minutos (constante en `backend/parking_rules.py`, la misma que rige el cooldown del punto 2) desde `paid_at` sin que la cámara confirme la salida, el ticket **vuelve a `open`**: se borran `amount` y `paid_at`, como si no hubiera pagado. Esto evita que un pago quede "reservado" indefinidamente si el vehículo tarda mucho en salir del predio.
 
 ---
 
@@ -188,17 +196,21 @@ Dos caminos posibles:
 | POST | `/entry/manual` | Registro manual `{ plate: "ABC-123" }` |
 | POST | `/exit/` | Cobra y marca ticket en espera de salida física `{ plate: "ABC-123" }` |
 | POST | `/exit/confirm` | Confirma salida manual de un ticket en estado 'waiting' |
-| GET | `/tickets/` | Historial paginado con filtros |
-| GET | `/tickets/stats` | Estadísticas del día |
+| GET | `/tickets/` | Historial paginado con filtros (admin y cajero) |
+| GET | `/tickets/stats` | Estadísticas del día (admin y cajero) |
 | GET | `/tickets/search/{plate}` | Busca ticket abierto por placa |
 | GET | `/tickets/status/{plate}` | Ticket activo más reciente de una placa (open/abono/waiting) |
+| DELETE | `/tickets/{ticket_id}` | Borra un ticket de forma permanente (solo admin) |
 | GET | `/camera/status` | Estado de la cámara (activa, último frame, última detección) |
 | GET | `/camera/frame.jpg` | Frame actual como JPEG (debug) |
 | WS | `/ws/plates` | Stream de detecciones en tiempo real |
 | POST | `/auth/login` | Login, devuelve JWT (form data `username`/`password`) |
 | GET | `/auth/me` | Datos del usuario autenticado |
 | POST | `/auth/change-password` | Cambia la contraseña del usuario autenticado |
-| GET/POST/PUT/DELETE | `/abonados/` | CRUD de abonados (solo admin) |
+| POST | `/auth/users` | Crea una cuenta de cajero o admin (solo admin) |
+| GET | `/auth/users` | Lista todas las cuentas del sistema (solo admin) |
+| DELETE | `/auth/users/{user_id}` | Elimina una cuenta (solo admin); no se puede auto-eliminar ni eliminar al último admin |
+| GET/POST/PUT/DELETE | `/abonados/` | CRUD de abonados (solo admin); DELETE es borrado permanente (hard delete), no una desactivación |
 | GET | `/abonados/check/{plate}` | Verifica si una placa es abonado activo |
 | GET | `/reports/monthly` | Resumen de ingresos/vehículos por mes (solo admin) |
 | GET | `/reports/monthly/{year}/{month}` | Detalle paginado de tickets del mes (solo admin) |
