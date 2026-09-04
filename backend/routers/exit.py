@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from auto_ticket import set_exit_cooldown
 from database import get_db
 from dependencies import get_current_user
 from models import Ticket, User
@@ -43,6 +44,11 @@ def confirm_exit_manual(
     ticket.status = "exited"
     db.commit()
     db.refresh(ticket)
+
+    # Even though this is a manual close, the camera may still see the plate
+    # for a few seconds while the car crosses the barrier. Without this, it
+    # would be mistaken for a brand-new entry (ghost ticket + spurious print).
+    set_exit_cooldown(plate)
 
     return {
         "ticket_id": ticket.id,

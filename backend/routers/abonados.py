@@ -145,7 +145,7 @@ def delete_abonado(
     db: Session = Depends(get_db),
     _admin=Depends(require_admin),
 ):
-    """Desactiva un abonado (soft delete). No elimina el registro de la DB."""
+    """Elimina un abonado de forma permanente (hard delete)."""
     abonado: Abonado | None = db.query(Abonado).filter(Abonado.id == abonado_id).first()
     if abonado is None:
         raise HTTPException(
@@ -153,10 +153,11 @@ def delete_abonado(
             detail=f"Abonado con id {abonado_id} no encontrado",
         )
 
-    abonado.active = False
+    plate = abonado.plate
+    db.delete(abonado)
     db.commit()
 
-    return {"detail": f"Abonado {abonado.plate} desactivado correctamente"}
+    return {"detail": f"Abonado {plate} eliminado correctamente"}
 
 
 @router.get("/check/{plate}")

@@ -8,13 +8,14 @@ from datetime import datetime, timedelta
 from database import SessionLocal
 from models import Abonado, Ticket
 from config import settings
+from parking_rules import EXIT_TOLERANCE_MINUTES
 from ticket_printer import print_entry_ticket
 from ws_manager import manager
 
 # Plates that recently confirmed exit → block re-entry for N seconds.
 # Prevents ghost tickets when the camera keeps detecting a plate that just exited.
 _exit_cooldown: dict[str, datetime] = {}
-_COOLDOWN_SECONDS = 60
+_COOLDOWN_SECONDS = EXIT_TOLERANCE_MINUTES * 60
 
 
 def _in_cooldown(plate: str) -> bool:
@@ -27,7 +28,13 @@ def _in_cooldown(plate: str) -> bool:
     return False
 
 
-def _set_cooldown(plate: str) -> None:
+def set_exit_cooldown(plate: str) -> None:
+    """Mark `plate` as recently exited so the camera ignores it for
+    EXIT_TOLERANCE_MINUTES. Called both from the automatic camera exit path
+    (below) and from the manual cashier exit confirmation (routers/exit.py),
+    so a manual close is protected from ghost re-entries just like an
+    automatic one.
+    """
     _exit_cooldown[plate] = datetime.utcnow() + timedelta(seconds=_COOLDOWN_SECONDS)
 
 
@@ -76,7 +83,7 @@ async def handle_plate_detected(plate: str) -> dict:
             waiting.exit_time = datetime.now()
             waiting.status = "exited"
             db.commit()
-            _set_cooldown(plate_upper)
+            set_exit_cooldown(plate_upper)
             await manager.broadcast({
                 "type": "exit_confirmed",
                 "plate": plate_upper,

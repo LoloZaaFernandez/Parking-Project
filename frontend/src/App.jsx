@@ -7,12 +7,14 @@ import History from './pages/History'
 import Reports from './pages/admin/Reports'
 import Settings from './pages/admin/Settings'
 import Abonados from './pages/admin/Abonados'
+import Usuarios from './pages/admin/Usuarios'
 import Account from './pages/Account'
 
 // Tab definitions per role
 const CASHIER_TABS = [
   { id: 'monitor', label: 'Monitor' },
   { id: 'cashier', label: 'Caja' },
+  { id: 'history', label: 'Historial' },
   { id: 'account', label: 'Mi cuenta' },
 ]
 
@@ -23,6 +25,7 @@ const ADMIN_TABS = [
   { id: 'abonados', label: 'Abonados' },
   { id: 'reports', label: 'Reportes' },
   { id: 'settings', label: 'Configuración' },
+  { id: 'usuarios', label: 'Usuarios' },
   { id: 'account', label: 'Mi cuenta' },
 ]
 
@@ -82,10 +85,11 @@ function MainApp() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {validTab === 'monitor'   && <Monitor />}
         {validTab === 'cashier'   && <Cashier />}
-        {validTab === 'history'   && isAdmin && <History />}
+        {validTab === 'history'   && <History />}
         {validTab === 'abonados'  && isAdmin && <Abonados />}
         {validTab === 'reports'   && isAdmin && <Reports />}
         {validTab === 'settings'  && isAdmin && <Settings />}
+        {validTab === 'usuarios'  && isAdmin && <Usuarios />}
         {validTab === 'account'   && <Account />}
       </main>
     </div>

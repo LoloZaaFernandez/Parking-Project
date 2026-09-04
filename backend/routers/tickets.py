@@ -30,7 +30,7 @@ def _serialize(t: Ticket) -> dict:
 @router.get("/stats")
 def daily_stats(
     db: Session = Depends(get_db),
-    _admin=Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ):
     today = datetime.date.today()
     start = datetime.datetime.combine(today, datetime.time.min)
@@ -99,7 +99,7 @@ def list_tickets(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: Session = Depends(get_db),
-    _admin=Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ):
     q = db.query(Ticket)
     if status:

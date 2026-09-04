@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../api'
+import { useAuth } from '../context/AuthContext'
 
 const PER_PAGE = 20
 
@@ -26,6 +27,7 @@ function calcHours(entry, exit) {
 }
 
 export default function History() {
+  const { isAdmin } = useAuth()
   const [tickets, setTickets] = useState([])
   const [stats, setStats] = useState(null)
   const [total, setTotal] = useState(0)
@@ -134,7 +136,7 @@ export default function History() {
                 <th className="px-4 py-3 text-right">Horas</th>
                 <th className="px-4 py-3 text-right">Monto</th>
                 <th className="px-4 py-3 text-center">Estado</th>
-                <th className="px-4 py-3 text-center">Acciones</th>
+                {isAdmin && <th className="px-4 py-3 text-center">Acciones</th>}
               </tr>
             </thead>
             <tbody>
@@ -165,17 +167,19 @@ export default function History() {
                   <td className="px-4 py-3 text-center">
                     <Badge status={t.status} />
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => handleDelete(t.id)}
-                      title="Borrar ticket"
-                      className="px-2 py-1 rounded text-xs font-medium text-red-400
-                                 bg-red-500/10 ring-1 ring-red-600/40
-                                 hover:bg-red-500/20 hover:text-red-300 transition-colors"
-                    >
-                      Borrar
-                    </button>
-                  </td>
+                  {isAdmin && (
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => handleDelete(t.id)}
+                        title="Borrar ticket"
+                        className="px-2 py-1 rounded text-xs font-medium text-red-400
+                                   bg-red-500/10 ring-1 ring-red-600/40
+                                   hover:bg-red-500/20 hover:text-red-300 transition-colors"
+                      >
+                        Borrar
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
